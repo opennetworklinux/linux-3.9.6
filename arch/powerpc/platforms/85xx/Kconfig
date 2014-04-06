@@ -312,6 +312,13 @@ config QUANTA_LB
 	help
 	  This option enables support for the Quanta LBx board
 
+config DELTA_7448
+       bool "Delta ET-7448BF"
+       select DEFAULT_UIMAGE
+       help
+         This option enables support for the Delta ET-7448BF board
+
+
 
 endif # FSL_SOC_BOOKE
 
