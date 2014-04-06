@@ -58,45 +58,36 @@
 		ranges = <0x0 0x0 0x0 0xe8000000 0x8000000
 			  0x1 0x0 0x0 0xffdf0000 0x0000100>;
 
-		flash@0,0 {
-			#address-cells = <1>;
-			#size-cells = <1>;
-			compatible = "cfi-flash";
-			reg = <0x0 0x0000000 0x8000000>;
-			bank-width = <2>;
-			endian = "little";
+                flash@0,0 {
 
-			flash@0 {
-				label = "loader-a";
-				reg = <0x00000000 0x01000000>;
-			};
+                       #address-cells = <1>;
+                       #size-cells = <1>;
+                       compatible = "cfi-flash";
+                       reg = <0x0 0x0 0x8000000>;
+                       bank-width = <2>;
+                       endian = "little";
 
-			flash@1 {
-				label = "loader-b";
-				reg = <0x01000000 0x01000000>;
-			};
-
-			flash@2 {
-				label = "flash-fs";
-				reg = <0x02000000 0x01000000>;
-			};
-
-			flash@3 {
-				label = "onie";
-				reg = <0x07b60000 0x00400000>;
-			};
-
-			flash@4 {
-				label = "uboot-env";
-				reg = <0x07f60000 0x00020000>;
-			};
-
-			flash@5 {
-				label = "uboot";
-				reg = <0x07f80000 0x00080000>;
-				read-only;
-			};
-		};
+                       flash@0 {
+                               reg = <0x00000000 0x07b60000>;
+                               label = "open";
+                       };
+                       flash@1 {
+                               /* 4MB onie */
+                               reg = <0x07b60000 0x00400000>;
+                               label = "onie";
+                       };
+                       flash@2 {
+                               /* 128KB, 1 sector */
+                               reg = <0x07f60000 0x00020000>;
+                               label = "uboot-env";
+                               env_size = <0x2000>;
+                       };
+                       flash@3 {
+                               /* 512KB u-boot */
+                               reg = <0x07f80000 0x00080000>;
+                               label = "uboot";
+                       };
+               };
 
 		cpld@1,0 {
 			compatible = "delta-7448-cpld";
