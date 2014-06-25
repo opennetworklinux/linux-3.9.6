@@ -145,11 +145,14 @@ static int pca954x_reg_write(struct i2c_adapter *adap,
 	return ret;
 }
 
+#define CONFIG_ALWAYS_SELECT_CHANNEL 1
+
 static int pca954x_select_chan(struct i2c_adapter *adap,
 			       void *client, u32 chan)
 {
 	struct pca954x *data = i2c_get_clientdata(client);
 	const struct chip_desc *chip = &chips[data->type];
+
 	u8 regval;
 	int ret = 0;
 
@@ -160,9 +163,9 @@ static int pca954x_select_chan(struct i2c_adapter *adap,
 		regval = 1 << chan;
 
 	/* Only select the channel if its different from the last channel */
-	if (data->last_chan != regval) {
-		ret = pca954x_reg_write(adap, client, regval);
-		data->last_chan = regval;
+	if (CONFIG_ALWAYS_SELECT_CHANNEL || data->last_chan != regval) {
+            ret = pca954x_reg_write(adap, client, regval);
+            data->last_chan = regval;
 	}
 
 	return ret;
@@ -229,15 +232,8 @@ static int pca954x_probe(struct i2c_client *client,
 
 		data->virt_adaps[num] =
 			i2c_add_mux_adapter(adap, &client->dev, client,
-				force, num, class, pca954x_select_chan,
-#define PCA954X_DESELECT_ALWAYS
-#ifdef PCA954X_DESELECT_ALWAYS
-                                            /* Fixme -- dynamic from DTS */
+                                            force, num, class, pca954x_select_chan,
                                             pca954x_deselect_mux);
-#else
-				(pdata && pdata->modes[num].deselect_on_exit)
-					? pca954x_deselect_mux : NULL);
-#endif
 
 		if (data->virt_adaps[num] == NULL) {
 			ret = -ENODEV;

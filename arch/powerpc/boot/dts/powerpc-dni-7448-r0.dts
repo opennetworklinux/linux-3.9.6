@@ -12,7 +12,7 @@
 /dts-v1/;
 
 / {
-	model = "Delta ET-7448BF";
+	model = "powerpc-dni-7448-r0";
 	compatible = "delta-7448";
 	#address-cells = <2>;
 	#size-cells = <2>;

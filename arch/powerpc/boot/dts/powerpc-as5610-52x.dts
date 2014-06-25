@@ -132,9 +132,23 @@
 			interrupts = <43 2>;
 			interrupt-parent = <&mpic>;
 			dfsrr;
-			rtc@68 {
-				compatible = "dallas,ds1339";
-				reg = <0x68>;
+
+            mux@70 {
+                compatible = "nxp,pca9548";
+                reg = <0x70>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                i2c@0 {
+                    #address-cells = <1>;
+                    #size-cells = <0>;
+                    reg = <0>;
+
+                    rtc@51 {
+                        compatible = "nxp,pcf8563";
+                        reg = <0x51>;
+                    };
+                };
 			};
 		};
 
