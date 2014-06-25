@@ -230,8 +230,14 @@ static int pca954x_probe(struct i2c_client *client,
 		data->virt_adaps[num] =
 			i2c_add_mux_adapter(adap, &client->dev, client,
 				force, num, class, pca954x_select_chan,
+#define PCA954X_DESELECT_ALWAYS
+#ifdef PCA954X_DESELECT_ALWAYS
+                                            /* Fixme -- dynamic from DTS */
+                                            pca954x_deselect_mux);
+#else
 				(pdata && pdata->modes[num].deselect_on_exit)
 					? pca954x_deselect_mux : NULL);
+#endif
 
 		if (data->virt_adaps[num] == NULL) {
 			ret = -ENODEV;
