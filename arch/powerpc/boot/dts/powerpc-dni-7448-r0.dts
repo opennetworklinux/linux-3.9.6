@@ -380,6 +380,7 @@
 			interrupts = <72 0x2>;
 			interrupt-parent = <&mpic>;
 			clock-frequency = <0>;
+            sdhci,auto-cmd12;
 		};
 
 		crypto@30000 {
