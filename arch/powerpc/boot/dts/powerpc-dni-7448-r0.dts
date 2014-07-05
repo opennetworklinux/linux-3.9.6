@@ -140,7 +140,7 @@
 			};
 
 			eeprom-mb@54 {
-				compatible = "at,24c02";
+				compatible = "at,24c08";
 				reg = <0x54>;
 				read-only;
 			};
