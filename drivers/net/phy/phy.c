@@ -41,6 +41,26 @@
 #include <asm/io.h>
 #include <asm/irq.h>
 #include <asm/uaccess.h>
+#include <linux/of.h>
+
+/*
+ * Service port status register related macros.
+ */
+#define SERVICE_PORT_STATUS_REG                 0x1c
+#define SERVICE_PORT_STATUS_REG_SHADOW          0x2000
+#define SERVICE_PORT_LED_CTRL_REG_SHADOW        0x2400
+#define SERVICE_PORT_LED_CTRL_REG_VALUE         0x8018
+#define SERVICE_PORT_LED_SELECTOR_1_REG_SHADOW  0x3400
+#define SERVICE_PORT_LED_SELECTOR_1_REG_VALUE   0x8063
+#define SERVICE_PORT_LED_SELECTOR_2_REG_SHADOW  0x3800
+#define SERVICE_PORT_LED_SELECTOR_2_REG_WRITE   0x8000
+#define SERVICE_PORT_LED_SELECTOR_2_LINK_10_100 0x00EF
+#define SERVICE_PORT_LED_SELECTOR_2_LINK_1G     0x00FE
+#define SERVICE_PORT_LED_SELECTOR_2_LINK_DOWN   0x00FF
+#define SERVICE_PORT_STATUS_LINK_SPD_MASK       0x0018
+#define SERVICE_PORT_STATUS_LINK_SPD_NO_LINK    0x0018
+#define SERVICE_PORT_STATUS_LINK_SPD_1000       0x0000
+
 
 /**
  * phy_print_status - Convenience function to print out the current phy status
@@ -476,7 +496,7 @@ static void phy_force_reduction(struct phy_device *phydev)
 	int idx;
 
 	idx = phy_find_setting(phydev->speed, phydev->duplex);
-	
+
 	idx++;
 
 	idx = phy_find_valid(idx, phydev->supported);
@@ -761,6 +781,65 @@ void phy_start(struct phy_device *phydev)
 EXPORT_SYMBOL(phy_stop);
 EXPORT_SYMBOL(phy_start);
 
+
+/**
+ * setServicePortLed - Set the CPLD status of service port LED
+ * @led_selector_2_mask: status of service port LED
+ */
+void setServicePortLed(struct phy_device *phydev, u16 led_selector_2_mask)
+{
+    u16 status = 0;
+
+    /* Write LED Control Register(01001) bit 3 and 4 as 1
+     */
+    phy_write(phydev, SERVICE_PORT_STATUS_REG, SERVICE_PORT_LED_CTRL_REG_SHADOW);
+    status = phy_read(phydev, SERVICE_PORT_STATUS_REG);
+    phy_write(phydev, SERVICE_PORT_STATUS_REG, status | SERVICE_PORT_LED_CTRL_REG_VALUE | SERVICE_PORT_LED_CTRL_REG_SHADOW);
+
+    /* Write LED Selector 1 Register(01101) bit 0~3 as 0011
+     */
+    phy_write(phydev, SERVICE_PORT_STATUS_REG, SERVICE_PORT_LED_SELECTOR_1_REG_SHADOW);
+    phy_write(phydev, SERVICE_PORT_STATUS_REG, SERVICE_PORT_LED_SELECTOR_1_REG_VALUE | SERVICE_PORT_LED_SELECTOR_1_REG_SHADOW);
+
+    /* Write LED Selector 2 Register(01110) depend on LINK status
+     */
+    phy_write(phydev, SERVICE_PORT_STATUS_REG, SERVICE_PORT_LED_SELECTOR_2_REG_SHADOW);
+    status = phy_read(phydev, SERVICE_PORT_STATUS_REG);
+    phy_write(phydev, SERVICE_PORT_STATUS_REG, SERVICE_PORT_LED_SELECTOR_2_REG_WRITE | SERVICE_PORT_LED_SELECTOR_2_REG_SHADOW | led_selector_2_mask);
+}
+
+/**
+ * lightServicePortLed - Light up service port LED while linkup, linkdown, and traffic
+ * @phydev: target phy_device struct
+ */
+void lightServicePortLed(struct phy_device *phydev)
+{
+    u16 status = 0;
+
+    /* Enable service port shadow selector to read the correct status
+     */
+    phy_write(phydev, SERVICE_PORT_STATUS_REG, SERVICE_PORT_STATUS_REG_SHADOW);
+
+    /* get status of service port
+     */
+    status = phy_read(phydev, SERVICE_PORT_STATUS_REG);
+
+    /* Check link status
+     */
+    if (SERVICE_PORT_STATUS_LINK_SPD_NO_LINK == (status & SERVICE_PORT_STATUS_LINK_SPD_MASK))
+    {
+        setServicePortLed(phydev, SERVICE_PORT_LED_SELECTOR_2_LINK_DOWN);
+    }
+    else if (SERVICE_PORT_STATUS_LINK_SPD_1000 == (status & SERVICE_PORT_STATUS_LINK_SPD_MASK)) /* Link speed = 1000 */
+    {
+        setServicePortLed(phydev, SERVICE_PORT_LED_SELECTOR_2_LINK_1G);
+    }
+    else /* Link speed = 10/100 */
+    {
+        setServicePortLed(phydev, SERVICE_PORT_LED_SELECTOR_2_LINK_10_100);
+    }
+}
+
 /**
  * phy_state_machine - Handle the state machine
  * @work: work_struct that describes the work to be done
@@ -957,6 +1036,19 @@ void phy_state_machine(struct work_struct *work)
 			}
 			break;
 	}
+
+        {
+            /** Hack - fixme properly */
+            struct device_node* root = of_find_node_by_path("/");
+            if(root) {
+                struct property* property = of_find_property(root, "model", NULL);
+                if(property) {
+                    if(!strcmp((char*)property->value, "powerpc-as4600-54t")) {
+                        lightServicePortLed(phydev);
+                    }
+                }
+            }
+        }
 
 	mutex_unlock(&phydev->lock);
 
