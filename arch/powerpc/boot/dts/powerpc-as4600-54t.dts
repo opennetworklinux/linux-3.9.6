@@ -17,12 +17,8 @@
 	#size-cells = <2>;
 
 	aliases {
-		/*ethernet0 = &enet0;*/
-		ethernet1 = &enet1;
-		/*ethernet2 = &enet2; */
+		ethernet0 = &enet1;
 		serial0 = &serial0;
-		serial1 = &serial1;
-		//pci0 = &pci0;
 		pci1 = &pci1;
 	};
 
@@ -47,8 +43,8 @@
 		device_type = "memory";
 	};
 
-localbus@ff705000 {
-                        ranges = <0x0 0x0 0x0 0xef800000 0x800000 0x1 0x0 0x0 0xea000000 0x100>;
+        localbus@ff705000 {
+                ranges = <0x0 0x0 0x0 0xef800000 0x800000 0x1 0x0 0x0 0xea000000 0x100>;
                 interrupts = <0x13 0x2>;
                 reg = <0x0 0xff705000 0x0 0x1000>;
                 compatible = "fsl,p2020-elbc", "fsl,elbc", "simple-bus";
@@ -159,16 +155,6 @@ localbus@ff705000 {
 			device_type = "serial";
 			compatible = "ns16550";
 			reg = <0x4500 0x100>;
-			clock-frequency = <0>;
-			interrupts = <42 2>;
-			interrupt-parent = <&mpic>;
-		};
-
-		serial1: serial@4600 {
-			cell-index = <1>;
-			device_type = "serial";
-			compatible = "ns16550";
-			reg = <0x4600 0x100>;
 			clock-frequency = <0>;
 			interrupts = <42 2>;
 			interrupt-parent = <&mpic>;
@@ -331,87 +317,50 @@ localbus@ff705000 {
 			interrupts = <28 0x2>;
 			phy_type = "ulpi";
 		};
-/* No ptp_timer
-		ptp_timer: ptimer@24e00 {
-			compatible = "fsl,gianfar-ptp-timer";
-			reg = <0x24e00 0xb0>;
-		};
-*/
 
-		enet0: ethernet@24000 {
+		mdio0: mdio@24520 {
 			#address-cells = <1>;
-			#size-cells = <1>;
-			cell-index = <0>;
-			device_type = "network";
-			model = "eTSEC";
-			compatible = "gianfar";
-			reg = <0x24000 0x1000>;
-			ranges = <0x0 0x24000 0x1000>;
-			local-mac-address = [ 00 00 00 00 00 00 ];
-			interrupts = <29 2 30 2 34 2>;
-			interrupt-parent = <&mpic>;
-			phy-handle = <&phy1>;
-			phy-connection-type = "rgmii-id";
-
-			mdio@520 {
-				#address-cells = <1>;
-				#size-cells = <0>;
-				device_type = "mdio";
-				compatible = "fsl,gianfar-mdio";
-				reg = <0x520 0x20>;
-				phy1: ethernet-phy@1 {
-					reg = <0x1>;
-				};
+			#size-cells = <0>;
+			compatible = "fsl,gianfar-mdio";
+			reg = <0x24520 0x20>;
+			phy1: ethernet-phy@1 {
+				interrupt-parent = <&mpic>;
+				interrupts = <3 1>;
+				reg = <0x1>;
+				device_type = "ethernet-phy";
 			};
 		};
 
 		enet1: ethernet@25000 {
-			#address-cells = <1>;
-			#size-cells = <1>;
-			cell-index = <1>;
+			#address-cells = <0x1>;
+			#size-cells = <0x1>;
+			cell-index = <0x1>;
 			device_type = "network";
 			model = "eTSEC";
 			compatible = "gianfar";
 			reg = <0x25000 0x1000>;
 			ranges = <0x0 0x25000 0x1000>;
-			local-mac-address = [ 00 11 22 33 44 55 ];
-			interrupts = <35 2 36 2 40 2>;
+			interrupts = <
+				   0x23 0x2
+				   0x24 0x2
+				   0x28 0x2>;
 			interrupt-parent = <&mpic>;
-			tbi-handle = <&tbi0>;
+			tbi-handle = <&tbi1>;
 			phy-handle = <&phy1>;
 			phy-connection-type = "sgmii";
+		};
 
-			mdio@520 {
-				#address-cells = <0x1>;
-				#size-cells = <0x0>;
-				compatible = "fsl,gianfar-tbi";
-				reg = <0x520 0x20>;
-
-				tbi0: tbi-phy@11 {
-					reg = <0x11>;
-					device_type = "tbi-phy";
-				};
+		mdio1: mdio@25520 {
+			#address-cells = <0x1>;
+			#size-cells = <0x0>;
+			compatible = "fsl,gianfar-tbi";
+			reg = <0x520 0x20>;
+			tbi1: tbi-phy@11 {
+				reg = <0x11>;
+				device_type = "tbi-phy";
 			};
 		};
 
-/* not used !
-		enet2: ethernet@26000 {
-			#address-cells = <1>;
-			#size-cells = <1>;
-			cell-index = <2>;
-			device_type = "network";
-			model = "eTSEC";
-			compatible = "gianfar";
-			reg = <0x26000 0x1000>;
-			ranges = <0x0 0x26000 0x1000>;
-			local-mac-address = [ 00 00 00 00 00 00 ];
-			interrupts = <31 2 32 2 33 2>;
-			interrupt-parent = <&mpic>;
-			phy-handle = <&phy1>;
-			phy-connection-type = "rgmii-id";
-			ptimer-handle = <&ptp_timer>;
-		};
-*/
 
 		sdhci@2e000 {
 			compatible = "fsl,p2020-esdhc", "fsl,esdhc";
@@ -491,41 +440,6 @@ localbus@ff705000 {
 		};
 	};
 
-	//pci0: pcie@ff709000 {
-//		cell-index = <1>;
-//		compatible = "fsl,mpc8548-pcie";
-//		device_type = "pci";
-//		#interrupt-cells = <1>;
-//		#size-cells = <2>;
-//		#address-cells = <3>;
-//		reg = <0 0xff709000 0 0x1000>;
-//		bus-range = <0 255>;
-//		ranges = <0x2000000 0x0 0xc0000000 0 0xc0000000 0x0 0x20000000
-//			  0x1000000 0x0 0x00000000 0 0xffc30000 0x0 0x10000>;
-//		clock-frequency = <33333333>;
-//		interrupt-parent = <&mpic>;
-//		interrupts = <25 2>;
-//		interrupt-map-mask = <0xf800 0x0 0x0 0x7>;
-//		interrupt-map = <
-//			/* IDSEL 0x0 */
-//			0000 0x0 0x0 0x1 &mpic 0x4 0x1
-//			0000 0x0 0x0 0x2 &mpic 0x5 0x1
-//			0000 0x0 0x0 0x3 &mpic 0x6 0x1
-//			0000 0x0 0x0 0x4 &mpic 0x7 0x1
-//			>;
-//		pcie@0 {
-//			reg = <0x0 0x0 0x0 0x0 0x0>;
-//			#size-cells = <2>;
-//			#address-cells = <3>;
-//			device_type = "pci";
-//			ranges = <0x2000000 0x0 0xc0000000
-//				  0x2000000 0x0 0xc0000000
-//				  0x0 0x20000000
-//				  0x1000000 0x0 0x0
-//				  0x1000000 0x0 0x0
-//				  0x0 0x100000>;
-//		};
-//	};
 	pci1: pcie@ff70a000 {
 		cell-index = <2>;
 		compatible = "fsl,mpc8548-pcie";
