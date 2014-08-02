@@ -1,14 +1,14 @@
 /*
  * <bsn.cl fy=2013 v=gpl>
- * 
- *        Copyright 2013, 2014 BigSwitch Networks, Inc.        
- * 
+ *
+ *        Copyright 2013, 2014 BigSwitch Networks, Inc.
+ *
  * This program is free software; you can redistribute it
  * and/or modify it under  the terms ofthe GNU General Public License as
  * published by the Free Software Foundation;  either version 2 of the  License,
  * or (at your option) any later version.
- * 
- * 
+ *
+ *
  * </bsn.cl>
  *
  * A hwmon driver for the Quanta LYx
@@ -155,7 +155,7 @@ static ssize_t set_fan_dir(struct device *dev,
 	struct quanta_ly_hwmon_data *data = i2c_get_clientdata(client);
 	int dir;
 
-	if (!strncmp(buf, "normal", 7))
+	if (!strncmp(buf, "normal", 6))
 		dir = 0;
 	else if (!strncmp(buf, "reverse", 7))
 		dir = 1;
