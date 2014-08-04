@@ -35,8 +35,9 @@ static const unsigned short normal_i2c[] = { 0x2C, 0x2E, 0x2F, I2C_CLIENT_END };
 #define QUANTA_LY_HWMON_REG_FAN_INPUT_BASE 0x80
 
 #define QUANTA_LY_HWMON_FAN_MANUAL_MODE 1
+#define QUANTA_LY_HWMON_FAN_AUTO_MODE 2
 
-#define QUANTA_LY_HWMON_NUM_FANS 4
+#define QUANTA_LY_HWMON_NUM_FANS 8
 
 struct quanta_ly_hwmon_data {
 	struct device		*hwmon_dev;
@@ -110,7 +111,7 @@ static ssize_t show_pwm(struct device *dev, struct device_attribute *devattr,
 					  QUANTA_LY_HWMON_REG_FAN_PWM_BASE
 					  + 2 * attr->index);
 	mutex_unlock(&data->lock);
-	return sprintf(buf, "%d\n", pwm * 255 / 10000);
+	return sprintf(buf, "%d\n", pwm);
 }
 
 static ssize_t set_pwm(struct device *dev, struct device_attribute *devattr,
@@ -128,7 +129,7 @@ static ssize_t set_pwm(struct device *dev, struct device_attribute *devattr,
 	mutex_lock(&data->lock);
 	i2c_smbus_write_word_swapped(client,
 				     QUANTA_LY_HWMON_REG_FAN_PWM_BASE
-				     + 2 * attr->index, val * 10000 / 255);
+				     + 2 * attr->index, val);
 	mutex_unlock(&data->lock);
 	return count;
 }
@@ -140,11 +141,30 @@ static ssize_t show_fan_dir(struct device *dev,
 	struct quanta_ly_hwmon_data *data = i2c_get_clientdata(client);
 	int dir;
 
+        int f2b = 0;
+        int b2f = 0;
+        int i;
+
 	mutex_lock(&data->lock);
-	dir = i2c_smbus_read_byte_data(client,
-				       QUANTA_LY_HWMON_REG_FAN_DIR);
+        for(i = 0; i < 4; i++) {
+            f2b += i2c_smbus_read_word_swapped(client,
+                                               QUANTA_LY_HWMON_REG_FAN_INPUT_BASE
+                                               + 2 * i);
+        }
+        for(i = 4; i < 8; i++) {
+            b2f += i2c_smbus_read_word_swapped(client,
+                                               QUANTA_LY_HWMON_REG_FAN_INPUT_BASE
+                                               + 2 * i);
+        }
+
 	mutex_unlock(&data->lock);
-	return sprintf(buf, dir ? "reverse\n" : "normal\n");
+        if(f2b) {
+            return sprintf(buf, "front-to-back");
+        }
+        if(b2f) {
+            return sprintf(buf, "back-to-front");
+        }
+        return sprintf(buf, "unknown");
 }
 
 static ssize_t set_fan_dir(struct device *dev,
@@ -178,10 +198,18 @@ static SENSOR_DEVICE_ATTR(fan1_input, S_IRUGO, show_fan, NULL, 0);
 static SENSOR_DEVICE_ATTR(fan2_input, S_IRUGO, show_fan, NULL, 1);
 static SENSOR_DEVICE_ATTR(fan3_input, S_IRUGO, show_fan, NULL, 2);
 static SENSOR_DEVICE_ATTR(fan4_input, S_IRUGO, show_fan, NULL, 3);
+static SENSOR_DEVICE_ATTR(fan5_input, S_IRUGO, show_fan, NULL, 4);
+static SENSOR_DEVICE_ATTR(fan6_input, S_IRUGO, show_fan, NULL, 5);
+static SENSOR_DEVICE_ATTR(fan7_input, S_IRUGO, show_fan, NULL, 6);
+static SENSOR_DEVICE_ATTR(fan8_input, S_IRUGO, show_fan, NULL, 7);
 static SENSOR_DEVICE_ATTR(pwm1, S_IWUSR | S_IRUGO, show_pwm, set_pwm, 0);
 static SENSOR_DEVICE_ATTR(pwm2, S_IWUSR | S_IRUGO, show_pwm, set_pwm, 1);
 static SENSOR_DEVICE_ATTR(pwm3, S_IWUSR | S_IRUGO, show_pwm, set_pwm, 2);
 static SENSOR_DEVICE_ATTR(pwm4, S_IWUSR | S_IRUGO, show_pwm, set_pwm, 3);
+static SENSOR_DEVICE_ATTR(pwm5, S_IWUSR | S_IRUGO, show_pwm, set_pwm, 4);
+static SENSOR_DEVICE_ATTR(pwm6, S_IWUSR | S_IRUGO, show_pwm, set_pwm, 5);
+static SENSOR_DEVICE_ATTR(pwm7, S_IWUSR | S_IRUGO, show_pwm, set_pwm, 6);
+static SENSOR_DEVICE_ATTR(pwm8, S_IWUSR | S_IRUGO, show_pwm, set_pwm, 7);
 static SENSOR_DEVICE_ATTR(fan_dir, S_IWUSR | S_IRUGO, show_fan_dir,
 			  set_fan_dir, 0);
 
@@ -195,10 +223,18 @@ static struct attribute *quanta_ly_hwmon_attr[] = {
 	&sensor_dev_attr_fan2_input.dev_attr.attr,
 	&sensor_dev_attr_fan3_input.dev_attr.attr,
 	&sensor_dev_attr_fan4_input.dev_attr.attr,
+	&sensor_dev_attr_fan5_input.dev_attr.attr,
+	&sensor_dev_attr_fan6_input.dev_attr.attr,
+	&sensor_dev_attr_fan7_input.dev_attr.attr,
+	&sensor_dev_attr_fan8_input.dev_attr.attr,
 	&sensor_dev_attr_pwm1.dev_attr.attr,
 	&sensor_dev_attr_pwm2.dev_attr.attr,
 	&sensor_dev_attr_pwm3.dev_attr.attr,
 	&sensor_dev_attr_pwm4.dev_attr.attr,
+	&sensor_dev_attr_pwm5.dev_attr.attr,
+	&sensor_dev_attr_pwm6.dev_attr.attr,
+	&sensor_dev_attr_pwm7.dev_attr.attr,
+	&sensor_dev_attr_pwm8.dev_attr.attr,
 	&sensor_dev_attr_fan_dir.dev_attr.attr,
 	NULL
 };
