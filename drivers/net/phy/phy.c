@@ -1037,6 +1037,7 @@ void phy_state_machine(struct work_struct *work)
 			break;
 	}
 
+#ifdef CONFIG_OF
         {
             /** Hack - fixme properly */
             struct device_node* root = of_find_node_by_path("/");
@@ -1049,6 +1050,7 @@ void phy_state_machine(struct work_struct *work)
                 }
             }
         }
+#endif
 
 	mutex_unlock(&phydev->lock);
 
