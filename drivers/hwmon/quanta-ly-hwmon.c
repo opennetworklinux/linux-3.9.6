@@ -111,7 +111,7 @@ static ssize_t show_pwm(struct device *dev, struct device_attribute *devattr,
 					  QUANTA_LY_HWMON_REG_FAN_PWM_BASE
 					  + 2 * attr->index);
 	mutex_unlock(&data->lock);
-	return sprintf(buf, "%d\n", pwm);
+        return sprintf(buf, "%d\n", pwm * 255 / 10000);
 }
 
 static ssize_t set_pwm(struct device *dev, struct device_attribute *devattr,
@@ -129,7 +129,7 @@ static ssize_t set_pwm(struct device *dev, struct device_attribute *devattr,
 	mutex_lock(&data->lock);
 	i2c_smbus_write_word_swapped(client,
 				     QUANTA_LY_HWMON_REG_FAN_PWM_BASE
-				     + 2 * attr->index, val);
+                                     + 2 * attr->index, val * 10000 / 255);
 	mutex_unlock(&data->lock);
 	return count;
 }
@@ -139,7 +139,6 @@ static ssize_t show_fan_dir(struct device *dev,
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct quanta_ly_hwmon_data *data = i2c_get_clientdata(client);
-	int dir;
 
         int f2b = 0;
         int b2f = 0;
