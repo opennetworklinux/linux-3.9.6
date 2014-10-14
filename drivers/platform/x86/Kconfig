@@ -781,4 +781,9 @@ config APPLE_GMUX
 	  graphics as well as the backlight. Currently only backlight
 	  control is supported by the driver.
 
+config X86_64_DELL_S6000_S1220_R0
+	tristate "Platform Driver for the DELL S6000"
+	---help---
+          Support the Dell S6000.
+
 endif # X86_PLATFORM_DEVICES
