@@ -24,6 +24,10 @@
  * actually an estimate of a board-specific value.
  */
 
+#ifdef CONFIG_ARCH_NR_GPIOS
+#define ARCH_NR_GPIOS		CONFIG_ARCH_NR_GPIOS
+#endif
+
 #ifndef ARCH_NR_GPIOS
 #define ARCH_NR_GPIOS		256
 #endif
