@@ -86,7 +86,8 @@ static int __init x86_64_dell_s6000_s1220_r0_init(void)
     vendor  = dmi_get_system_info(DMI_SYS_VENDOR);
     product = dmi_get_system_info(DMI_PRODUCT_NAME);
 
-    if(strcmp(vendor, "Dell Inc") || strcmp(product, "S6000 (SI)")) {
+    if(strcmp(vendor, "Dell Inc") ||
+       (strcmp(product, "S6000 (SI)") && strcmp(product, "S6000-ON"))) {
         /* Not the S6000 */
         return -ENODEV;
     }
