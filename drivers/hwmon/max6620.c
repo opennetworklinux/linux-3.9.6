@@ -1,16 +1,9 @@
 /*
- * max6620.c - Simple RPM driver for the max6620.
+ * max6620.c - Linux Kernel module for hardware monitoring.
  *
- * This driver is designed for the following operatinng modes only:
- *   1. All fans in RPM mode (via tach targets).
- *   2. Fan failure detection.
- *
- * TODO: Parameterize values via driver data.
- *
- * (C) Big Switch Networks, Inc. (support@bigswitch.com)
+ * (C) 2012 by L. Grunenberg <contact@lgrunenberg.de>
  *
  * based on code written by :
- * (C) 2012 by L. Grunenberg <contact@lgrunenberg.de>
  * 2007 by Hans J. Koch <hjk@hansjkoch.de>
  * John Morris <john.morris@spirentcom.com>
  * Copyright (c) 2003 Spirent Communications
@@ -20,7 +13,7 @@
  *
  * The datasheet was last seen at:
  *
- *        http://datasheets.maximintegrated.com/en/ds/MAX6620.pdf
+ *        http://pdfserv.maxim-ic.com/en/ds/MAX6620.pdf
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,6 +38,20 @@
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
 #include <linux/err.h>
+
+/*
+ * Insmod parameters
+ */
+
+
+/* clock: The clock frequency of the chip the driver should assume */
+static int clock = 8192;
+static u32 sr = 4;
+static u32 np = 2;
+
+module_param(clock, int, S_IRUGO);
+
+static const unsigned short normal_i2c[] = {0x0a, 0x1a, 0x2a, I2C_CLIENT_END};
 
 /*
  * MAX 6620 registers
@@ -107,28 +114,24 @@
 #define MAX6620_FAIL_MASK3	0x08
 
 
-/*
- * Minimum and maximum values of the FAN-RPM.
- * TODO: Make these dynamic via platform driver data.
- */
-#define FAN_RPM_MIN 1000
-#define FAN_RPM_MAX 18000
+/* Minimum and maximum values of the FAN-RPM */
+#define FAN_RPM_MIN 240
+#define FAN_RPM_MAX 30000
 
-static int max6620_probe(struct i2c_client *client,
-                         const struct i2c_device_id *id);
+#define DIV_FROM_REG(reg) (1 << ((reg & 0xE0) >> 5))
 
+static int max6620_probe(struct i2c_client *client, const struct i2c_device_id *id);
+static int max6620_init_client(struct i2c_client *client);
 static int max6620_remove(struct i2c_client *client);
+static struct max6620_data *max6620_update_device(struct device *dev);
 
-
-/** Fan Configuration Registers */
 static const u8 config_reg[] = {
-    MAX6620_REG_CONF_FAN0,
-    MAX6620_REG_CONF_FAN1,
-    MAX6620_REG_CONF_FAN2,
-    MAX6620_REG_CONF_FAN3,
+	MAX6620_REG_CONF_FAN0,
+	MAX6620_REG_CONF_FAN1,
+	MAX6620_REG_CONF_FAN2,
+	MAX6620_REG_CONF_FAN3,
 };
 
-/** Fan Dynamics Registers */
 static const u8 dyn_reg[] = {
 	MAX6620_REG_DYN_FAN0,
 	MAX6620_REG_DYN_FAN1,
@@ -136,7 +139,6 @@ static const u8 dyn_reg[] = {
 	MAX6620_REG_DYN_FAN3,
 };
 
-/** Measured Tach Registers -- Use to calculate actual speed */
 static const u8 tach_reg[] = {
 	MAX6620_REG_TACH0,
 	MAX6620_REG_TACH1,
@@ -151,14 +153,12 @@ static const u8 volt_reg[] = {
 	MAX6620_REG_VOLT3,
 };
 
-/** Target Tach Registers -- Use to set desired speed. */
 static const u8 target_reg[] = {
 	MAX6620_REG_TAR0,
 	MAX6620_REG_TAR1,
 	MAX6620_REG_TAR2,
 	MAX6620_REG_TAR3,
 };
-
 
 static const u8 dac_reg[] = {
 	MAX6620_REG_DAC0,
@@ -167,143 +167,303 @@ static const u8 dac_reg[] = {
 	MAX6620_REG_DAC3,
 };
 
+/*
+ * Driver data (common to all clients)
+ */
+
 static const struct i2c_device_id max6620_id[] = {
-    { "max6620", 0 },
-    { }
+	{ "max6620", 0 },
+	{ }
 };
 MODULE_DEVICE_TABLE(i2c, max6620_id);
 
-
 static struct i2c_driver max6620_driver = {
-    .class		= I2C_CLASS_HWMON,
-    .driver = {
-        .name	= "max6620",
-    },
-    .probe		= max6620_probe,
-    .remove		= max6620_remove,
-    .id_table	= max6620_id,
+	.class		= I2C_CLASS_HWMON,
+	.driver = {
+		.name	= "max6620",
+	},
+	.probe		= max6620_probe,
+	.remove		= max6620_remove,
+	.id_table	= max6620_id,
+	.address_list	= normal_i2c,
 };
 
+/*
+ * Client data (each client gets its own)
+ */
 
-static int calc_tach_to_rpm(int tach)
-{
-    /**
-     * Calculation:
-     *
-     * Target Tach = 60 / (NP * RPM) * SR * 8192
-     * Where (in this driver):
-     *   NP = 2
-     *   SR = 4
-     */
+struct max6620_data {
+	struct device *hwmon_dev;
+	struct mutex update_lock;
+	int nr_fans;
+	char valid; /* zero until following fields are valid */
+	unsigned long last_updated; /* in jiffies */
 
-    int np = 2;
-    int sr = 4;
+	/* register values */
+	u8 speed[4];
+	u8 config;
+	u8 fancfg[4];
+	u8 fandyn[4];
+	u8 tach[4];
+	u8 volt[4];
+	u8 target[4];
+	u8 dac[4];
+	u8 fault;
+};
 
-    /**
-     * This makes the RPM Calculation:
-     *   RPM = (491520 * SR) / (Tach * NP)
-     * RPM = 491520 * SR / (TT * NP )
-     */
-    return (491520 * sr) / (tach * np);
-}
-static int calc_rpm_to_tach(int rpm)
-{
-    /** See above */
-    int np = 2;
-    int sr = 4;
+static ssize_t get_fan(struct device *dev, struct device_attribute *devattr, char *buf) {
 
-    return (491520*sr) / (rpm * np);
-}
+	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+	struct max6620_data *data = max6620_update_device(dev);
+	struct i2c_client *client = to_i2c_client(dev);
+	u32 rpm = 0;
+	u32 tach = 0;
+	u32 tach1 = 0;
+	u32 tach2 = 0;
 
-
-static int get_tach_base(struct i2c_client* client, int base)
-{
-    int tach_high = i2c_smbus_read_byte_data(client, base);
-    int tach_low = i2c_smbus_read_byte_data(client, base + 1);
-    int tach = (tach_high << 8) | tach_low;
-    return tach >> 5;
-}
-
-static int set_tach_base(struct i2c_client* client, int base, int tach)
-{
-    int rv = 0;
-    int tach_high, tach_low;
-
-    tach <<= 5;
-    tach_high = tach >> 8;
-    tach_low = tach & 0xFF;
-
-    rv += i2c_smbus_write_byte_data(client, base, tach_high);
-    rv += i2c_smbus_write_byte_data(client, base+1, tach_low);
-
-    return rv;
+	tach1 = i2c_smbus_read_byte_data(client, tach_reg[attr->index]);
+	tach1 = (tach1 << 3) & 0x7f8;
+	tach2 = i2c_smbus_read_byte_data(client, tach_reg[attr->index] + 1);
+	tach2 = (tach2 >> 5) & 0x7;
+	tach = tach1 | tach2;
+	if (tach == 0) {
+		rpm = 0;
+	} else {
+		rpm = (60 * sr * clock)/(tach * np);
+	}
+	return sprintf(buf, "%d\n", rpm);
 }
 
-static int get_rpm_base(struct i2c_client* client, int base)
-{
-    int tach = get_tach_base(client, base);
-    return calc_tach_to_rpm(tach);
+static ssize_t get_target(struct device *dev, struct device_attribute *devattr, char *buf) {
+
+	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+	struct max6620_data *data = max6620_update_device(dev);
+	struct i2c_client *client = to_i2c_client(dev);
+	u32 rpm;
+	u32 target;
+	u32 target1;
+	u32 target2;
+
+	target1 = i2c_smbus_read_byte_data(client, target_reg[attr->index]);
+	target1 = (target1 << 3) & 0x7f8;
+	target2 = i2c_smbus_read_byte_data(client, target_reg[attr->index] + 1);
+	target2 = (target2 >> 5) & 0x7;
+	target = target1 | target2;
+	if (target == 0) {
+		rpm = 0;
+	} else {
+		rpm = (60 * sr * clock)/(target * np);
+	}
+	return sprintf(buf, "%d\n", rpm);
 }
 
-static int set_rpm_base(struct i2c_client* client, int base, int rpm)
+/* Scale user input to sensible values */
+static inline int SENSORS_LIMIT(long value, long low, long high)
 {
-    int tach = calc_rpm_to_tach(rpm);
-    return set_tach_base(client, base, tach);
+    if (value < low)
+        return low;
+    else if (value > high)
+        return high;
+    else
+        return value;
 }
 
-static int get_fan_rpm(struct device *dev,
-                       struct device_attribute *devattr)
-{
-    struct i2c_client *client = to_i2c_client(dev);
-    struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
-    return get_rpm_base(client, tach_reg[attr->index]);
-}
-static int get_fan_target_rpm(struct device *dev,
-                              struct device_attribute *devattr)
-{
-    struct i2c_client *client = to_i2c_client(dev);
-    struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
-    return get_rpm_base(client, target_reg[attr->index]);
-}
-static int set_fan_target_rpm(struct device *dev,
-                              struct device_attribute *devattr, int rpm)
-{
-    struct i2c_client *client = to_i2c_client(dev);
-    struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
-    return set_rpm_base(client, target_reg[attr->index], rpm);
+
+static ssize_t set_target(struct device *dev, struct device_attribute *devattr, const char *buf, size_t count) {
+
+	struct i2c_client *client = to_i2c_client(dev);
+	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+	struct max6620_data *data = i2c_get_clientdata(client);
+	u32 rpm;
+	int err;
+	u32 target;
+	u32 target1;
+	u32 target2;
+
+	err = kstrtoul(buf, 10, &rpm);
+	if (err)
+		return err;
+
+	rpm = SENSORS_LIMIT(rpm, FAN_RPM_MIN, FAN_RPM_MAX);
+
+	mutex_lock(&data->update_lock);
+
+	target = (60 * sr * 8192)/(rpm * np);
+	target1 = (target >> 3) & 0xff;
+	target2 = (target << 5) & 0xe0;
+	i2c_smbus_write_byte_data(client, target_reg[attr->index], target1);
+	i2c_smbus_write_byte_data(client, target_reg[attr->index] + 1, target2);
+
+	mutex_unlock(&data->update_lock);
+
+	return count;
 }
 
-static ssize_t
-get_fan(struct device *dev, struct device_attribute *devattr, char *buf)
-{
-    return sprintf(buf, "%d\n", get_fan_rpm(dev, devattr));
+/*
+ * Get/set the fan speed in open loop mode using pwm1 sysfs file.
+ * Speed is given as a relative value from 0 to 255, where 255 is maximum
+ * speed. Note that this is done by writing directly to the chip's DAC,
+ * it won't change the closed loop speed set by fan1_target.
+ * Also note that due to rounding errors it is possible that you don't read
+ * back exactly the value you have set.
+ */
+
+static ssize_t get_pwm(struct device *dev, struct device_attribute *devattr, char *buf) {
+
+	int pwm;
+	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+	struct max6620_data *data = max6620_update_device(dev);
+
+	/*
+	 * Useful range for dac is 0-180 for 12V fans and 0-76 for 5V fans.
+	 * Lower DAC values mean higher speeds.
+	 */
+	pwm = ((int)data->volt[attr->index]);
+
+	if (pwm < 0)
+		pwm = 0;
+
+	return sprintf(buf, "%d\n", pwm);
 }
-static ssize_t
-get_target(struct device *dev, struct device_attribute *devattr, char *buf)
-{
-    return sprintf(buf, "%d\n", get_fan_target_rpm(dev, devattr));
+
+static ssize_t set_pwm(struct device *dev, struct device_attribute *devattr, const char *buf, size_t count) {
+
+	struct i2c_client *client = to_i2c_client(dev);
+	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+	struct max6620_data *data = i2c_get_clientdata(client);
+	unsigned long pwm;
+	int err;
+
+	err = kstrtoul(buf, 10, &pwm);
+	if (err)
+		return err;
+
+	pwm = SENSORS_LIMIT(pwm, 0, 255);
+
+	mutex_lock(&data->update_lock);
+
+		data->dac[attr->index] = pwm;
+
+
+	i2c_smbus_write_byte_data(client, dac_reg[attr->index], data->dac[attr->index]);
+	i2c_smbus_write_byte_data(client, dac_reg[attr->index]+1, 0x00);
+
+	mutex_unlock(&data->update_lock);
+
+	return count;
 }
 
-static ssize_t
-set_target(struct device *dev, struct device_attribute *devattr,
-           const char *buf, size_t count)
-{
-    int err;
-    unsigned long rpm;
+/*
+ * Get/Set controller mode:
+ * Possible values:
+ * 0 = Fan always on
+ * 1 = Open loop, Voltage is set according to speed, not regulated.
+ * 2 = Closed loop, RPM for all fans regulated by fan1 tachometer
+ */
 
-    err = kstrtoul(buf, 10, &rpm);
-    if(err) {
-        return err;
-    }
+static ssize_t get_enable(struct device *dev, struct device_attribute *devattr, char *buf) {
 
-    if(rpm < FAN_RPM_MIN) {
-        rpm = FAN_RPM_MIN;
-    }
-    if(rpm > FAN_RPM_MAX) {
-        rpm = FAN_RPM_MAX;
-    }
-    set_fan_target_rpm(dev, devattr, rpm);
-    return count;
+	struct max6620_data *data = max6620_update_device(dev);
+	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+	int mode = (data->fancfg[attr->index] & 0x80 ) >> 7;
+	int sysfs_modes[2] = {1, 2};
+
+	return sprintf(buf, "%d\n", sysfs_modes[mode]);
+}
+
+static ssize_t set_enable(struct device *dev, struct device_attribute *devattr, const char *buf, size_t count) {
+
+	struct i2c_client *client = to_i2c_client(dev);
+	struct max6620_data *data = i2c_get_clientdata(client);
+	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+	int max6620_modes[3] = {0, 1, 0};
+	unsigned long mode;
+	int err;
+
+	err = kstrtoul(buf, 10, &mode);
+	if (err)
+		return err;
+
+	if (mode > 2)
+		return -EINVAL;
+
+	mutex_lock(&data->update_lock);
+
+	data->fancfg[attr->index] = i2c_smbus_read_byte_data(client, config_reg[attr->index]);
+	data->fancfg[attr->index] = (data->fancfg[attr->index] & ~0x80)
+		       | (max6620_modes[mode] << 7);
+
+	i2c_smbus_write_byte_data(client, config_reg[attr->index], data->fancfg[attr->index]);
+
+	mutex_unlock(&data->update_lock);
+
+	return count;
+}
+
+/*
+ * Read/write functions for fan1_div sysfs file. The MAX6620 has no such
+ * divider. We handle this by converting between divider and counttime:
+ *
+ * (counttime == k) <==> (divider == 2^k), k = 0, 1, 2, 3, 4 or 5
+ *
+ * Lower values of k allow to connect a faster fan without the risk of
+ * counter overflow. The price is lower resolution. You can also set counttime
+ * using the module parameter. Note that the module parameter "prescaler" also
+ * influences the behaviour. Unfortunately, there's no sysfs attribute
+ * defined for that. See the data sheet for details.
+ */
+
+static ssize_t get_div(struct device *dev, struct device_attribute *devattr, char *buf) {
+
+	struct max6620_data *data = max6620_update_device(dev);
+	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+
+	return sprintf(buf, "%d\n", DIV_FROM_REG(data->fandyn[attr->index]));
+}
+
+static ssize_t set_div(struct device *dev, struct device_attribute *devattr, const char *buf, size_t count) {
+
+	struct i2c_client *client = to_i2c_client(dev);
+	struct max6620_data *data = i2c_get_clientdata(client);
+	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+	unsigned long div;
+	int err;
+	u8 div_bin;
+
+	err = kstrtoul(buf, 10, &div);
+	if (err)
+		return err;
+
+	mutex_lock(&data->update_lock);
+	switch (div) {
+	case 1:
+		div_bin = 0;
+		break;
+	case 2:
+		div_bin = 1;
+		break;
+	case 4:
+		div_bin = 2;
+		break;
+	case 8:
+		div_bin = 3;
+		break;
+	case 16:
+		div_bin = 4;
+		break;
+	case 32:
+		div_bin = 5;
+		break;
+	default:
+		mutex_unlock(&data->update_lock);
+		return -EINVAL;
+	}
+	data->fandyn[attr->index] &= 0x1F;
+	data->fandyn[attr->index] |= div_bin << 5;
+	i2c_smbus_write_byte_data(client, dyn_reg[attr->index], data->fandyn[attr->index]);
+	mutex_unlock(&data->update_lock);
+
+	return count;
 }
 
 /*
@@ -313,17 +473,23 @@ set_target(struct device *dev, struct device_attribute *devattr,
  * 1 = alarm
  */
 
-static ssize_t
-get_alarm(struct device *dev, struct device_attribute *devattr, char *buf)
-{
-    struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
-    struct i2c_client *client = to_i2c_client(dev);
-    int fault = 0;
+static ssize_t get_alarm(struct device *dev, struct device_attribute *devattr, char *buf) {
 
-    fault = i2c_smbus_read_byte_data(client, MAX6620_REG_FAULT);
-    /* Skip the masks */
-    fault >>= 4;
-    return sprintf(buf, "%d\n", (fault & (1 << attr->index)) ? 1 : 0);
+	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+	struct max6620_data *data = max6620_update_device(dev);
+	struct i2c_client *client = to_i2c_client(dev);
+	int alarm = 0;
+
+	if (data->fault & (1 << attr->index)) {
+		mutex_lock(&data->update_lock);
+		alarm = 1;
+		data->fault &= ~(1 << attr->index);
+		data->fault |= i2c_smbus_read_byte_data(client,
+							MAX6620_REG_FAULT);
+		mutex_unlock(&data->update_lock);
+	}
+
+	return sprintf(buf, "%d\n", alarm);
 }
 
 static SENSOR_DEVICE_ATTR(fan1_input, S_IRUGO, get_fan, NULL, 0);
@@ -331,13 +497,21 @@ static SENSOR_DEVICE_ATTR(fan2_input, S_IRUGO, get_fan, NULL, 1);
 static SENSOR_DEVICE_ATTR(fan3_input, S_IRUGO, get_fan, NULL, 2);
 static SENSOR_DEVICE_ATTR(fan4_input, S_IRUGO, get_fan, NULL, 3);
 static SENSOR_DEVICE_ATTR(fan1_target, S_IWUSR | S_IRUGO, get_target, set_target, 0);
+static SENSOR_DEVICE_ATTR(fan1_div, S_IWUSR | S_IRUGO, get_div, set_div, 0);
+// static SENSOR_DEVICE_ATTR(pwm1_enable, S_IWUSR | S_IRUGO, get_enable, set_enable, 0);
+static SENSOR_DEVICE_ATTR(pwm1, S_IWUSR | S_IRUGO, get_pwm, set_pwm, 0);
 static SENSOR_DEVICE_ATTR(fan2_target, S_IWUSR | S_IRUGO, get_target, set_target, 1);
+static SENSOR_DEVICE_ATTR(fan2_div, S_IWUSR | S_IRUGO, get_div, set_div, 1);
+// static SENSOR_DEVICE_ATTR(pwm2_enable, S_IWUSR | S_IRUGO, get_enable, set_enable, 1);
+static SENSOR_DEVICE_ATTR(pwm2, S_IWUSR | S_IRUGO, get_pwm, set_pwm, 1);
 static SENSOR_DEVICE_ATTR(fan3_target, S_IWUSR | S_IRUGO, get_target, set_target, 2);
+static SENSOR_DEVICE_ATTR(fan3_div, S_IWUSR | S_IRUGO, get_div, set_div, 2);
+// static SENSOR_DEVICE_ATTR(pwm3_enable, S_IWUSR | S_IRUGO, get_enable, set_enable, 2);
+static SENSOR_DEVICE_ATTR(pwm3, S_IWUSR | S_IRUGO, get_pwm, set_pwm, 2);
 static SENSOR_DEVICE_ATTR(fan4_target, S_IWUSR | S_IRUGO, get_target, set_target, 3);
-static SENSOR_DEVICE_ATTR(fan1_alarm, S_IRUGO, get_alarm, NULL, 0);
-static SENSOR_DEVICE_ATTR(fan2_alarm, S_IRUGO, get_alarm, NULL, 1);
-static SENSOR_DEVICE_ATTR(fan3_alarm, S_IRUGO, get_alarm, NULL, 2);
-static SENSOR_DEVICE_ATTR(fan4_alarm, S_IRUGO, get_alarm, NULL, 3);
+static SENSOR_DEVICE_ATTR(fan4_div, S_IWUSR | S_IRUGO, get_div, set_div, 3);
+// static SENSOR_DEVICE_ATTR(pwm4_enable, S_IWUSR | S_IRUGO, get_enable, set_enable, 3);
+static SENSOR_DEVICE_ATTR(pwm4, S_IWUSR | S_IRUGO, get_pwm, set_pwm, 3);
 
 static struct attribute *max6620_attrs[] = {
 	&sensor_dev_attr_fan1_input.dev_attr.attr,
@@ -345,13 +519,21 @@ static struct attribute *max6620_attrs[] = {
 	&sensor_dev_attr_fan3_input.dev_attr.attr,
 	&sensor_dev_attr_fan4_input.dev_attr.attr,
 	&sensor_dev_attr_fan1_target.dev_attr.attr,
+	&sensor_dev_attr_fan1_div.dev_attr.attr,
+//	&sensor_dev_attr_pwm1_enable.dev_attr.attr,
+	&sensor_dev_attr_pwm1.dev_attr.attr,
 	&sensor_dev_attr_fan2_target.dev_attr.attr,
+	&sensor_dev_attr_fan2_div.dev_attr.attr,
+//	&sensor_dev_attr_pwm2_enable.dev_attr.attr,
+	&sensor_dev_attr_pwm2.dev_attr.attr,
 	&sensor_dev_attr_fan3_target.dev_attr.attr,
+	&sensor_dev_attr_fan3_div.dev_attr.attr,
+//	&sensor_dev_attr_pwm3_enable.dev_attr.attr,
+	&sensor_dev_attr_pwm3.dev_attr.attr,
 	&sensor_dev_attr_fan4_target.dev_attr.attr,
-	&sensor_dev_attr_fan1_alarm.dev_attr.attr,
-	&sensor_dev_attr_fan2_alarm.dev_attr.attr,
-	&sensor_dev_attr_fan3_alarm.dev_attr.attr,
-	&sensor_dev_attr_fan4_alarm.dev_attr.attr,
+	&sensor_dev_attr_fan4_div.dev_attr.attr,
+//	&sensor_dev_attr_pwm4_enable.dev_attr.attr,
+	&sensor_dev_attr_pwm4.dev_attr.attr,
 	NULL
 };
 
@@ -359,70 +541,161 @@ static struct attribute_group max6620_attr_grp = {
 	.attrs = max6620_attrs,
 };
 
-struct max6620_data {
-    struct device* device;
-    struct mutex lock;
-};
 
-static int max6620_probe(struct i2c_client *client,
-                         const struct i2c_device_id *id)
-{
-    int i;
-    struct max6620_data *data;
-    int err;
+/*
+ * Real code
+ */
 
-    data = devm_kzalloc(&client->dev, sizeof(struct max6620_data), GFP_KERNEL);
-    if (!data) {
-        dev_err(&client->dev, "out of memory.\n");
-        return -ENOMEM;
-    }
+static int max6620_probe(struct i2c_client *client, const struct i2c_device_id *id) {
 
-    i2c_set_clientdata(client, data);
-    mutex_init(&data->lock);
+	struct max6620_data *data;
+	int err;
 
-    /*
-     * Initialize the max6620 chip.
-     *
-     * We configure all fans in RPM mode.
-     */
-    for(i = 0; i < 4; i++) {
-        i2c_smbus_write_byte_data(client, config_reg[i], 0xC0);
-    }
+	data = devm_kzalloc(&client->dev, sizeof(struct max6620_data), GFP_KERNEL);
+	if (!data) {
+		dev_err(&client->dev, "out of memory.\n");
+		return -ENOMEM;
+	}
 
-    err = sysfs_create_group(&client->dev.kobj, &max6620_attr_grp);
-    if (err)
-        return err;
+	i2c_set_clientdata(client, data);
+	mutex_init(&data->update_lock);
+	data->nr_fans = id->driver_data;
 
-    data->device = hwmon_device_register(&client->dev);
+	/*
+	 * Initialize the max6620 chip
+	 */
+	dev_info(&client->dev, "About to initialize module\n");
 
-    if (IS_ERR(data->device)) {
-        err = PTR_ERR(data->device);
-        dev_err(&client->dev, "error registering hwmon device.\n");
-        sysfs_remove_group(&client->dev.kobj, &max6620_attr_grp);
-        return err;
-    }
+	err = max6620_init_client(client);
+	if (err)
+		return err;
+	dev_info(&client->dev, "Module initialized\n");
 
-    /*
-     * Initialize all fans to max.
-     * TODO: Make configurable through platform data.
-     */
-    for(i = 0; i < 4; i++) {
-        set_rpm_base(client, target_reg[i], 18000);
-    }
+	err = sysfs_create_group(&client->dev.kobj, &max6620_attr_grp);
+	if (err)
+		return err;
+dev_info(&client->dev, "Sysfs entries created\n");
 
-    return 0;
+	data->hwmon_dev = hwmon_device_register(&client->dev);
+	if (!IS_ERR(data->hwmon_dev))
+		return 0;
+
+	err = PTR_ERR(data->hwmon_dev);
+	dev_err(&client->dev, "error registering hwmon device.\n");
+
+	sysfs_remove_group(&client->dev.kobj, &max6620_attr_grp);
+	return err;
 }
 
-static int max6620_remove(struct i2c_client *client)
-{
-    struct max6620_data *data = i2c_get_clientdata(client);
-    hwmon_device_unregister(data->device);
-    sysfs_remove_group(&client->dev.kobj, &max6620_attr_grp);
-    return 0;
+static int max6620_remove(struct i2c_client *client) {
+
+	struct max6620_data *data = i2c_get_clientdata(client);
+
+	hwmon_device_unregister(data->hwmon_dev);
+
+	sysfs_remove_group(&client->dev.kobj, &max6620_attr_grp);
+	return 0;
 }
 
-module_i2c_driver(max6620_driver);
+static int max6620_init_client(struct i2c_client *client) {
 
-MODULE_AUTHOR("Big Switch Networks");
+	struct max6620_data *data = i2c_get_clientdata(client);
+	int config;
+	int err = -EIO;
+	int i;
+
+	config = i2c_smbus_read_byte_data(client, MAX6620_REG_CONFIG);
+
+	if (config < 0) {
+		dev_err(&client->dev, "Error reading config, aborting.\n");
+		return err;
+	}
+
+
+	/*
+	 * Set bit 4, disable other fans from going full speed on a fail
+	 * failure.
+	 */
+	if (i2c_smbus_write_byte_data(client, MAX6620_REG_CONFIG, config | 0x10)) {
+		dev_err(&client->dev, "Config write error, aborting.\n");
+		return err;
+	}
+
+	data->config = config;
+	for (i = 0; i < 4; i++) {
+		data->fancfg[i] = i2c_smbus_read_byte_data(client, config_reg[i]);
+		data->fancfg[i] |= 0xC0;		// enable TACH monitoring
+		i2c_smbus_write_byte_data(client, config_reg[i], data->fancfg[i]);
+		data->fandyn[i] = i2c_smbus_read_byte_data(client, dyn_reg[i]);
+                /* 4 counts (010) and Rate change 100 (0.125 secs) */
+		data-> fandyn[i] = 0x50;
+		i2c_smbus_write_byte_data(client, dyn_reg[i], data->fandyn[i]);
+		data->tach[i] = i2c_smbus_read_byte_data(client, tach_reg[i]);
+		data->volt[i] = i2c_smbus_read_byte_data(client, volt_reg[i]);
+		data->target[i] = i2c_smbus_read_byte_data(client, target_reg[i]);
+		data->dac[i] = i2c_smbus_read_byte_data(client, dac_reg[i]);
+
+	}
+	return 0;
+}
+
+static struct max6620_data *max6620_update_device(struct device *dev)
+{
+	int i;
+	struct i2c_client *client = to_i2c_client(dev);
+	struct max6620_data *data = i2c_get_clientdata(client);
+
+	mutex_lock(&data->update_lock);
+
+	if (time_after(jiffies, data->last_updated + HZ) || !data->valid) {
+
+		for (i = 0; i < 4; i++) {
+			data->fancfg[i] = i2c_smbus_read_byte_data(client, config_reg[i]);
+			data->fandyn[i] = i2c_smbus_read_byte_data(client, dyn_reg[i]);
+			data->tach[i] = i2c_smbus_read_byte_data(client, tach_reg[i]);
+			data->volt[i] = i2c_smbus_read_byte_data(client, volt_reg[i]);
+			data->target[i] = i2c_smbus_read_byte_data(client, target_reg[i]);
+			data->dac[i] = i2c_smbus_read_byte_data(client, dac_reg[i]);
+		}
+
+
+		/*
+		 * Alarms are cleared on read in case the condition that
+		 * caused the alarm is removed. Keep the value latched here
+		 * for providing the register through different alarm files.
+		 */
+		u8 fault_reg;
+		fault_reg = i2c_smbus_read_byte_data(client, MAX6620_REG_FAULT);
+		data->fault |= (fault_reg >> 4) & (fault_reg & 0x0F);
+
+		data->last_updated = jiffies;
+		data->valid = 1;
+	}
+
+	mutex_unlock(&data->update_lock);
+
+	return data;
+}
+
+// module_i2c_driver(max6620_driver);
+
+static int __init max6620_init(void)
+{
+	return i2c_add_driver(&max6620_driver);
+}
+module_init(max6620_init);
+
+/**
+ * sht21_init() - clean up driver
+ *
+ * Called when module is removed.
+ */
+static void __exit max6620_exit(void)
+{
+	i2c_del_driver(&max6620_driver);
+}
+module_exit(max6620_exit);
+
+MODULE_AUTHOR("Lucas Grunenberg");
 MODULE_DESCRIPTION("MAX6620 sensor driver");
 MODULE_LICENSE("GPL");
