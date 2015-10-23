@@ -2138,6 +2138,36 @@ s32 igb_phy_init_script_igp3(struct e1000_hw *hw)
 }
 
 /**
+ *  igb_phy_init_script_5461s - Inits the BCM5461S PHY
+ *  @hw: pointer to the HW structure
+ *
+ *  Initializes a Broadcom Gigabit PHY.
+ **/
+s32 igb_phy_init_script_5461s(struct e1000_hw *hw)
+{
+	u16 mii_reg_led = 0;
+
+	hw_dbg("Running BCM5461S PHY init script\n");
+
+    /* 1. Speed LED (Set the Link LED mode), Shadow 00010, 0x1C.bit2=1 */
+	hw->phy.ops.write_reg(hw, 0x1C, 0x0800);
+	hw->phy.ops.read_reg(hw, 0x1C, &mii_reg_led);
+    mii_reg_led |= 0x0004;
+	hw->phy.ops.write_reg(hw, 0x1C, mii_reg_led | 0x8000);
+
+    /* 2. Active LED (Set the Link LED mode), Shadow 01001, 0x1C.bit4=1, 0x10.bit5=0 */
+	hw->phy.ops.write_reg(hw, 0x1C, 0x2400);
+	hw->phy.ops.read_reg(hw, 0x1C, &mii_reg_led);
+    mii_reg_led |= 0x0010;
+	hw->phy.ops.write_reg(hw, 0x1C, mii_reg_led | 0x8000);
+	hw->phy.ops.read_reg(hw, 0x10, &mii_reg_led);
+    mii_reg_led &= 0xffdf;
+	hw->phy.ops.write_reg(hw, 0x10, mii_reg_led);
+
+	return E1000_SUCCESS;
+}
+
+/**
  * igb_power_up_phy_copper - Restore copper link in case of PHY power down
  * @hw: pointer to the HW structure
  *
