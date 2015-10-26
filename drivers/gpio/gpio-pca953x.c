@@ -55,6 +55,7 @@ static const struct i2c_device_id pca953x_id[] = {
 	{ "pca9539", 16 | PCA953X_TYPE | PCA_INT, },
 	{ "pca9554", 8  | PCA953X_TYPE | PCA_INT, },
 	{ "pca9555", 16 | PCA953X_TYPE | PCA_INT, },
+	{ "pca9698", 40 | PCA953X_TYPE | PCA_INT, },
 	{ "pca9556", 8  | PCA953X_TYPE, },
 	{ "pca9557", 8  | PCA953X_TYPE, },
 	{ "pca9574", 8  | PCA957X_TYPE | PCA_INT, },
@@ -309,7 +310,7 @@ static int pca953x_gpio_get_value(struct gpio_chip *gc, unsigned off)
 		return 0;
 	}
 
-	return (reg_val & (1u << off)) ? 1 : 0;
+	return (reg_val & (1u << (off % BANK_SZ))) ? 1 : 0;
 }
 
 static void pca953x_gpio_set_value(struct gpio_chip *gc, unsigned off, int val)
@@ -820,6 +821,7 @@ static const struct of_device_id pca953x_dt_ids[] = {
 	{ .compatible = "nxp,pca9539", },
 	{ .compatible = "nxp,pca9554", },
 	{ .compatible = "nxp,pca9555", },
+	{ .compatible = "nxp,pca9698", },
 	{ .compatible = "nxp,pca9556", },
 	{ .compatible = "nxp,pca9557", },
 	{ .compatible = "nxp,pca9574", },

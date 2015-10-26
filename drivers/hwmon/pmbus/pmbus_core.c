@@ -1677,6 +1677,20 @@ static int pmbus_identify_common(struct i2c_client *client,
 	return 0;
 }
 
+static int pmbus_emer_detect(struct i2c_client *client)
+{
+	struct device *dev = &client->dev;
+	u8 value[4];
+
+	if(i2c_smbus_read_block_data(client, PMBUS_MFR_ID, value) > 0
+			&& memcmp(value, "EMER", 4) == 0) {
+		dev_info(dev, "EMER detected\n");
+		return 0;
+	}
+
+	return -ENODEV;
+}
+
 static int pmbus_init_common(struct i2c_client *client, struct pmbus_data *data,
 			     struct pmbus_driver_info *info)
 {
@@ -1694,8 +1708,18 @@ static int pmbus_init_common(struct i2c_client *client, struct pmbus_data *data,
 		data->status_register = PMBUS_STATUS_WORD;
 		ret = i2c_smbus_read_word_data(client, PMBUS_STATUS_WORD);
 		if (ret < 0 || ret == 0xffff) {
+			if(pmbus_emer_detect(client) == 0) {
+				data->status_register = PMBUS_STATUS_MFR_SPECIFIC;
+				ret = i2c_smbus_read_byte_data(client, PMBUS_STATUS_MFR_SPECIFIC);
+				if (ret < 0 || ret == 0xff) {
+					dev_err(dev, "PMBus status register not found\n");
+					return -ENODEV;
+				}
+			}
+			else {
 			dev_err(dev, "PMBus status register not found\n");
 			return -ENODEV;
+			}
 		}
 	}
 

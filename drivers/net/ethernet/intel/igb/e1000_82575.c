@@ -222,6 +222,10 @@ static s32 igb_init_phy_params_82575(struct e1000_hw *hw)
             phy->type = e1000_phy_bcm54616;
             break;
 
+	case BCM5461S_E_PHY_ID:
+		phy->type = e1000_phy_bcm5461s;
+		break;
+
 	default:
 		ret_val = -E1000_ERR_PHY;
 		goto out;
@@ -738,6 +742,10 @@ static s32 igb_phy_hw_reset_sgmii_82575(struct e1000_hw *hw)
 		goto out;
 
 	ret_val = igb_phy_sw_reset(hw);
+
+	if (hw->phy.type == e1000_phy_bcm5461s) {
+		igb_phy_init_script_5461s(hw);
+	}
 
 out:
 	return ret_val;
@@ -1379,6 +1387,8 @@ static s32 igb_setup_copper_link_82575(struct e1000_hw *hw)
 		break;
 	case e1000_phy_82580:
 		ret_val = igb_copper_link_setup_82580(hw);
+		break;
+	case e1000_phy_bcm5461s:
 		break;
 	default:
 		ret_val = -E1000_ERR_PHY;

@@ -52,3 +52,4 @@ obj-$(CONFIG_SAMSUNG_Q10)	+= samsung-q10.o
 obj-$(CONFIG_APPLE_GMUX)	+= apple-gmux.o
 obj-$(CONFIG_CHROMEOS_LAPTOP)	+= chromeos_laptop.o
 obj-$(CONFIG_X86_64_DELL_S6000_S1220_R0)                            += x86_64_dell_s6000_s1220_r0.o
+obj-$(CONFIG_QUANTA_SWITCH)	+= quanta_switch.o

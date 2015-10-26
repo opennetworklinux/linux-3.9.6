@@ -786,4 +786,10 @@ config X86_64_DELL_S6000_S1220_R0
 	---help---
           Support the Dell S6000.
 
+config QUANTA_SWITCH
+	tristate "Quanta Switch Platform Driver"
+	---help---
+	  This driver provides support for Quanta Switch x86 platform i2c,
+	  and peripheral controls.
+
 endif # X86_PLATFORM_DEVICES
