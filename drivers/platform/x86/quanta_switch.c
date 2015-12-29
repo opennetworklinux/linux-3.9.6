@@ -382,22 +382,24 @@ static struct i2c_client *registered_i2c_clients[MAX_I2C_CLIENTS];
 
 static int __init quanta_switch_init(void)
 {
-    char const *vendor, *product;
-    struct i2c_adapter *adapter;
+	char const *vendor, *product;
+	struct i2c_adapter *adapter;
 	struct i2c_board_info *board_info;
 	int i;
 	int ret = 0;
 
-    vendor  = dmi_get_system_info(DMI_SYS_VENDOR);
-    product = dmi_get_system_info(DMI_PRODUCT_NAME);
+	vendor  = dmi_get_system_info(DMI_SYS_VENDOR);
+	product = dmi_get_system_info(DMI_PRODUCT_NAME);
 
-	if(!strcmp(vendor, VENDOR_NAME) &&
-	   (strstr(product, PRODUCT_NAME_LY6) != NULL)) {
+	if((!strcmp(vendor, VENDOR_NAME) &&
+		(strstr(product, PRODUCT_NAME_LY6) != NULL)) ||
+		(strstr(saved_command_line, "onl_platform=x86-64-quanta-ly6-rangeley") != NULL)) {
 		   init_data = quanta_ly6_i2c_init_data;
 		   init_data_size = ARRAY_SIZE(quanta_ly6_i2c_init_data);
 	}
-	else if(!strcmp(vendor, VENDOR_NAME) &&
-	   (strstr(product, PRODUCT_NAME_LY8) != NULL)) {
+	else if((!strcmp(vendor, VENDOR_NAME) &&
+		(strstr(product, PRODUCT_NAME_LY8) != NULL)) ||
+		(strstr(saved_command_line, "onl_platform=x86-64-quanta-ly8-rangeley") != NULL)) {
 		   init_data = quanta_ly8_i2c_init_data;
 		   init_data_size = ARRAY_SIZE(quanta_ly8_i2c_init_data);
 	}
