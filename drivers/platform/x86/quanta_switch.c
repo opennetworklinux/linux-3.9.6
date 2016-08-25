@@ -86,7 +86,7 @@ struct i2c_init_data {
 };
 
 static struct i2c_init_data quanta_ly6_i2c_init_data[] = {
-	{ .parent_bus = (0x00 + 0), .type = i2c_type_pca9548, .addr = 0x71, .busno = 0x02, .name = "PCA9546(CPU)\0" },
+	{ .parent_bus = (0x00 + 0), .type = i2c_type_pca9546, .addr = 0x71, .busno = 0x02, .name = "PCA9546(CPU)\0" },
 	{ .parent_bus = (0x02 + 0), .type = i2c_type_pca9555, .addr = 0x20, .gpio_base = 0x40, .name = "PCA9555_1(CPU)\0" },
 
 	{ .parent_bus = (0x00 + 0), .type = i2c_type_quanta_ly6_hwmon,   .addr = 0x4e, .name = "PSoc\0" },
@@ -143,7 +143,7 @@ static struct i2c_init_data quanta_ly6_i2c_init_data[] = {
 };
 
 static struct i2c_init_data quanta_ly8_i2c_init_data[] = {
-	{ .parent_bus = (0x00 + 0), .type = i2c_type_pca9548, .addr = 0x71, .busno = 0x02, .name = "PCA9546(CPU)\0" },
+	{ .parent_bus = (0x00 + 0), .type = i2c_type_pca9546, .addr = 0x71, .busno = 0x02, .name = "PCA9546(CPU)\0" },
 	{ .parent_bus = (0x02 + 0), .type = i2c_type_pca9555, .addr = 0x20, .gpio_base = 0x40, .name = "PCA9555_1(CPU)\0" },
 
 	{ .parent_bus = (0x00 + 0), .type = i2c_type_quanta_ly8_hwmon,   .addr = 0x4e, .name = "PSoc\0" },
