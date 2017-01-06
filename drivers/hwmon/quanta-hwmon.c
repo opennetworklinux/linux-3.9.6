@@ -49,6 +49,7 @@ enum quanta_hwmon_s {
 	quanta_ly6_hwmon,
 	quanta_ly6f_hwmon,
 	quanta_ly8_hwmon,
+	quanta_ly9_hwmon,
 };
 
 static int quanta_hwmon_probe(struct i2c_client *client,
@@ -59,6 +60,7 @@ static const struct i2c_device_id quanta_hwmon_id[] = {
 	{ "quanta_ly6_hwmon",	quanta_ly6_hwmon },
 	{ "quanta_ly6f_hwmon",	quanta_ly6f_hwmon },
 	{ "quanta_ly8_hwmon",	quanta_ly8_hwmon },
+	{ "quanta_ly9_hwmon",	quanta_ly9_hwmon },
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, quanta_hwmon_id);
@@ -145,6 +147,7 @@ static ssize_t set_pwm(struct device *dev, struct device_attribute *devattr,
 static SENSOR_DEVICE_ATTR(temp1_input, S_IRUGO, show_temp, NULL, 0);
 static SENSOR_DEVICE_ATTR(temp2_input, S_IRUGO, show_temp, NULL, 1);
 static SENSOR_DEVICE_ATTR(temp3_input, S_IRUGO, show_temp, NULL, 2);
+static SENSOR_DEVICE_ATTR(temp4_input, S_IRUGO, show_temp, NULL, 3);//For LY9
 static SENSOR_DEVICE_ATTR(temp5_input, S_IRUGO, show_temp, NULL, 4);
 static SENSOR_DEVICE_ATTR(temp6_input, S_IRUGO, show_temp, NULL, 5);
 static SENSOR_DEVICE_ATTR(fan1_input, S_IRUGO, show_fan, NULL, 0);
@@ -159,6 +162,23 @@ static struct attribute *quanta_hwmon_attr[] = {
 	&sensor_dev_attr_temp1_input.dev_attr.attr,
 	&sensor_dev_attr_temp2_input.dev_attr.attr,
 	&sensor_dev_attr_temp3_input.dev_attr.attr,
+	&sensor_dev_attr_temp5_input.dev_attr.attr,
+	&sensor_dev_attr_temp6_input.dev_attr.attr,
+	&sensor_dev_attr_fan1_input.dev_attr.attr,
+	&sensor_dev_attr_fan2_input.dev_attr.attr,
+	&sensor_dev_attr_fan3_input.dev_attr.attr,
+	&sensor_dev_attr_fan5_input.dev_attr.attr,
+	&sensor_dev_attr_fan6_input.dev_attr.attr,
+	&sensor_dev_attr_fan7_input.dev_attr.attr,
+	&sensor_dev_attr_pwm1.dev_attr.attr,
+	NULL
+};
+
+static struct attribute *quanta_hwmon_attr_6temps_3fans[] = {
+	&sensor_dev_attr_temp1_input.dev_attr.attr,
+	&sensor_dev_attr_temp2_input.dev_attr.attr,
+	&sensor_dev_attr_temp3_input.dev_attr.attr,
+	&sensor_dev_attr_temp4_input.dev_attr.attr,
 	&sensor_dev_attr_temp5_input.dev_attr.attr,
 	&sensor_dev_attr_temp6_input.dev_attr.attr,
 	&sensor_dev_attr_fan1_input.dev_attr.attr,
@@ -187,7 +207,12 @@ static int quanta_hwmon_probe(struct i2c_client *client,
 
 	dev_info(&client->dev, "%s chip found\n", client->name);
 
-	data->attrs.attrs = quanta_hwmon_attr;
+    if(!strcmp(client->name, "quanta_ly9_hwmon")){
+	    data->attrs.attrs = quanta_hwmon_attr_6temps_3fans;
+    }
+    else{
+	    data->attrs.attrs = quanta_hwmon_attr;
+    }
 	err = sysfs_create_group(&client->dev.kobj, &data->attrs);
 	if (err)
 		return err;
